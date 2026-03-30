@@ -38,12 +38,12 @@ class MonitoringService:
 
             cameras = await get_enabled_cameras(session)
             active_students = await self._get_active_students(session)
-            active_by_classroom: dict[str, list[Student]] = {}
-            for classroom_id, student in active_students:
-                active_by_classroom.setdefault(classroom_id, []).append(student)
+            active_by_class: dict[str, list[Student]] = {}
+            for class_id, student in active_students:
+                active_by_class.setdefault(class_id, []).append(student)
 
             for camera in cameras:
-                students = active_by_classroom.get(camera.classroom_id, [])
+                students = active_by_class.get(camera.classroom_id, [])
                 if not students:
                     continue
                 frame = self._capture_frame(camera.rtsp_url)
@@ -88,7 +88,7 @@ class MonitoringService:
     async def _record_matches(
         self,
         session: AsyncSession,
-        classroom_id: str,
+        class_id: str,
         students: list[Student],
         observed_embeddings: list[list[float]],
     ) -> None:
@@ -103,7 +103,7 @@ class MonitoringService:
                 session.add(
                     DetectionEvent(
                         uid=student.uid,
-                        classroom_id=classroom_id,
+                        classroom_id=class_id,
                         confidence=best_confidence,
                     )
                 )
@@ -111,7 +111,7 @@ class MonitoringService:
                     select(Alert).where(
                         and_(
                             Alert.uid == student.uid,
-                            Alert.classroom_id == classroom_id,
+                            Alert.classroom_id == class_id,
                             Alert.status == "active",
                         )
                     )
@@ -125,13 +125,13 @@ class MonitoringService:
         now = now_utc()
         threshold = timedelta(minutes=threshold_minutes)
 
-        for classroom_id, student in active_students:
+        for class_id, student in active_students:
             last_seen = await session.scalar(
                 select(DetectionEvent.timestamp)
                 .where(
                     and_(
                         DetectionEvent.uid == student.uid,
-                        DetectionEvent.classroom_id == classroom_id,
+                        DetectionEvent.classroom_id == class_id,
                     )
                 )
                 .order_by(desc(DetectionEvent.timestamp))
@@ -145,7 +145,7 @@ class MonitoringService:
                 select(Alert).where(
                     and_(
                         Alert.uid == student.uid,
-                        Alert.classroom_id == classroom_id,
+                        Alert.classroom_id == class_id,
                         Alert.status == "active",
                     )
                 )
@@ -156,7 +156,7 @@ class MonitoringService:
             duration_minutes = threshold_minutes if last_seen is None else int((now - last_seen).total_seconds() // 60)
             alert = Alert(
                 uid=student.uid,
-                classroom_id=classroom_id,
+                classroom_id=class_id,
                 status="active",
                 payload={
                     "student_name": student.name,
@@ -167,13 +167,13 @@ class MonitoringService:
             session.add(alert)
             await session.flush()
             await manager.broadcast(
-                classroom_id,
+                class_id,
                 {
                     "type": "absence_alert",
                     "id": str(alert.id),
                     "uid": student.uid,
                     "student_name": student.name,
-                    "classroom_id": classroom_id,
+                    "class_id": class_id,
                     "duration_minutes": duration_minutes,
                     "last_seen_at": last_seen.isoformat() if last_seen else None,
                     "status": "active",

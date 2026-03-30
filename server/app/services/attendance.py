@@ -29,7 +29,7 @@ async def ensure_default_monitoring_config(session: AsyncSession) -> MonitoringC
     return config
 
 
-async def list_active_students(session: AsyncSession, classroom_id: str | None = None) -> list[dict]:
+async def list_active_students(session: AsyncSession, class_id: str | None = None) -> list[dict]:
     latest_subquery = (
         select(
             AttendanceEvent.uid,
@@ -52,8 +52,8 @@ async def list_active_students(session: AsyncSession, classroom_id: str | None =
         .join(Student, Student.uid == latest_subquery.c.uid)
         .where(latest_subquery.c.event_type == "checkin")
     )
-    if classroom_id:
-        query = query.where(latest_subquery.c.classroom_id == classroom_id)
+    if class_id:
+        query = query.where(latest_subquery.c.classroom_id == class_id)
 
     rows = (await session.execute(query)).all()
     active_students: list[dict] = []
@@ -76,7 +76,6 @@ async def list_active_students(session: AsyncSession, classroom_id: str | None =
                 "uid": student.uid,
                 "name": student.name,
                 "class_id": student.class_id,
-                "classroom_id": latest_classroom_id,
                 "checked_in_at": checked_in_at,
                 "last_seen_at": last_seen,
             }
@@ -91,7 +90,7 @@ async def get_enabled_cameras(session: AsyncSession) -> list[CameraConfig]:
 
 async def list_attendance_sessions(
     session: AsyncSession,
-    classroom_id: str | None = None,
+    class_id: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     query = (
@@ -99,8 +98,8 @@ async def list_attendance_sessions(
         .join(Student, Student.uid == AttendanceEvent.uid)
         .order_by(AttendanceEvent.timestamp.asc(), AttendanceEvent.id.asc())
     )
-    if classroom_id:
-        query = query.where(AttendanceEvent.classroom_id == classroom_id)
+    if class_id:
+        query = query.where(AttendanceEvent.classroom_id == class_id)
 
     rows = (await session.execute(query)).all()
     sessions_by_key: dict[tuple[str, str], dict[str, Any]] = {}
@@ -117,7 +116,6 @@ async def list_attendance_sessions(
                 "uid": student.uid,
                 "name": student.name,
                 "class_id": student.class_id,
-                "classroom_id": event.classroom_id,
                 "checked_in_at": event.timestamp,
                 "checked_out_at": None,
                 "status": "checked_in",
@@ -136,7 +134,6 @@ async def list_attendance_sessions(
                         "uid": student.uid,
                         "name": student.name,
                         "class_id": student.class_id,
-                        "classroom_id": event.classroom_id,
                         "checked_in_at": None,
                         "checked_out_at": event.timestamp,
                         "status": "checked_out",

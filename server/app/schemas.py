@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class CheckEventRequest(BaseModel):
-    classroom_id: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    class_id: str = Field(validation_alias=AliasChoices("class_id", "classroom_id"))
     embedding: list[float] = Field(..., min_length=128, max_length=128)
     device_id: str | None = None
     confidence: float | None = None
@@ -26,7 +28,6 @@ class ActiveStudentResponse(BaseModel):
     uid: str
     name: str
     class_id: str
-    classroom_id: str
     checked_in_at: datetime
     last_seen_at: datetime | None = None
 
@@ -35,7 +36,6 @@ class AttendanceSessionResponse(BaseModel):
     uid: str
     name: str
     class_id: str
-    classroom_id: str
     checked_in_at: datetime | None = None
     checked_out_at: datetime | None = None
     status: str
@@ -49,7 +49,9 @@ class StudentRegistrationResponse(BaseModel):
 
 
 class CameraConfigIn(BaseModel):
-    classroom_id: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    class_id: str = Field(validation_alias=AliasChoices("class_id", "classroom_id"))
     display_name: str
     rtsp_url: str
     enabled: bool = True
@@ -72,7 +74,7 @@ class AlertResponse(BaseModel):
     id: UUID
     uid: str
     student_name: str
-    classroom_id: str
+    class_id: str
     status: str
     duration_minutes: int
     last_seen_at: datetime | None

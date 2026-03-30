@@ -8,6 +8,8 @@ SmartAttend is a monorepo for student attendance and classroom presence monitori
 - `server/`: FastAPI backend, PostgreSQL/pgvector integration, CCTV monitoring scheduler
 - `dashboard/`: React + Tailwind teacher dashboard and admin panel
 
+In this project, `class_id` is the primary identifier for an academic class such as `Class-10-A`. The teacher view, attendance logs, kiosk check-in/check-out flow, alerts, and camera configuration should all use the same `class_id` value.
+
 ## Stack
 
 - Python 3.11+
@@ -111,6 +113,7 @@ scripts\start-kiosk.cmd
 Camera selection:
 
 - The kiosk no longer defaults to camera index `0`.
+- Set `SMARTATTEND_CLASS_ID=class-10-a` in [kiosk/.env](C:/Users/lamsa/Downloads/Risely-SmartAttend/kiosk/.env) so kiosk events are recorded for the correct class.
 - Set `SMARTATTEND_CAMERA_INDEX=1` in [kiosk/.env](C:/Users/lamsa/Downloads/Risely-SmartAttend/kiosk/.env) to target the HD webcam instead of common virtual-camera slots.
 - On Windows, `SMARTATTEND_CAMERA_BACKEND=dshow` is the canonical backend for USB webcams.
 

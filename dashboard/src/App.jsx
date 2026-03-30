@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
-const DEFAULT_CLASSROOM = import.meta.env.VITE_CLASSROOM_ID ?? "classroom-a";
+const DEFAULT_CLASS_ID = import.meta.env.VITE_CLASS_ID ?? import.meta.env.VITE_CLASSROOM_ID ?? "class-10-a";
 
 function formatDateTime(value) {
   if (!value) {
@@ -68,7 +68,7 @@ function SectionCard({ title, children, action }) {
 }
 
 function App() {
-  const [classroomId, setClassroomId] = useState(DEFAULT_CLASSROOM);
+  const [classId, setClassId] = useState(DEFAULT_CLASS_ID);
   const [activeStudents, setActiveStudents] = useState([]);
   const [attendanceSessions, setAttendanceSessions] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -79,7 +79,7 @@ function App() {
     absence_alert_threshold_minutes: 15
   });
   const [studentForm, setStudentForm] = useState({ uid: "", name: "", class_id: "", photos: [] });
-  const [cameraForm, setCameraForm] = useState({ classroom_id: "", display_name: "", rtsp_url: "", enabled: true });
+  const [cameraForm, setCameraForm] = useState({ class_id: "", display_name: "", rtsp_url: "", enabled: true });
   const [studentStatus, setStudentStatus] = useState({ type: "", message: "" });
   const [cameraStatus, setCameraStatus] = useState({ type: "", message: "" });
   const [settingsStatus, setSettingsStatus] = useState({ type: "", message: "" });
@@ -107,9 +107,9 @@ function App() {
 
   const refreshAttendance = async () => {
     const [active, sessions, currentAlerts] = await Promise.all([
-      fetchJson(`/active-students?classroom_id=${encodeURIComponent(classroomId)}`),
-      fetchJson(`/attendance-sessions?classroom_id=${encodeURIComponent(classroomId)}&limit=50`),
-      fetchJson(`/alerts?classroom_id=${encodeURIComponent(classroomId)}`)
+      fetchJson(`/active-students?class_id=${encodeURIComponent(classId)}`),
+      fetchJson(`/attendance-sessions?class_id=${encodeURIComponent(classId)}&limit=50`),
+      fetchJson(`/alerts?class_id=${encodeURIComponent(classId)}`)
     ]);
     setActiveStudents(active);
     setAttendanceSessions(sessions);
@@ -132,11 +132,11 @@ function App() {
     refreshAdmin();
     const pollId = window.setInterval(refreshAttendance, 15000);
     return () => window.clearInterval(pollId);
-  }, [classroomId]);
+  }, [classId]);
 
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${protocol}//${window.location.host}/ws/alerts/${classroomId}`);
+    const socket = new WebSocket(`${protocol}//${window.location.host}/ws/alerts/${classId}`);
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data);
       if (payload.type === "absence_alert") {
@@ -155,7 +155,7 @@ function App() {
       window.clearInterval(heartbeat);
       socket.close();
     };
-  }, [classroomId]);
+  }, [classId]);
 
   const summary = useMemo(() => {
     return {
@@ -217,7 +217,7 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cameraForm)
       });
-      setCameraForm({ classroom_id: "", display_name: "", rtsp_url: "", enabled: true });
+      setCameraForm({ class_id: "", display_name: "", rtsp_url: "", enabled: true });
       setCameraStatus({ type: "success", message: "Camera saved successfully." });
       await refreshAdmin();
     } catch (error) {
@@ -249,11 +249,11 @@ function App() {
             <h1 className="font-display text-4xl md:text-5xl">Attendance and classroom monitoring</h1>
           </div>
           <label className="flex max-w-xs flex-col gap-2 text-sm">
-            <span className="text-blue-100">Teacher classroom view</span>
+            <span className="text-blue-100">Teacher class view</span>
             <input
               className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-paper outline-none"
-              value={classroomId}
-              onChange={(event) => setClassroomId(event.target.value)}
+              value={classId}
+              onChange={(event) => setClassId(event.target.value)}
             />
           </label>
         </div>
@@ -287,7 +287,7 @@ function App() {
                     </p>
                   </article>
                 ))}
-                {activeStudents.length === 0 && <p className="text-slate-500">No active students for this classroom.</p>}
+                {activeStudents.length === 0 && <p className="text-slate-500">No active students for this class.</p>}
               </div>
             </div>
 
@@ -342,7 +342,7 @@ function App() {
 
             <form className="grid gap-3" onSubmit={submitCamera}>
               <h3 className="text-lg font-semibold">Configure camera</h3>
-              <input className="rounded-2xl border p-3" placeholder="Classroom ID" value={cameraForm.classroom_id} onChange={(e) => setCameraForm({ ...cameraForm, classroom_id: e.target.value })} />
+              <input className="rounded-2xl border p-3" placeholder="Class ID" value={cameraForm.class_id} onChange={(e) => setCameraForm({ ...cameraForm, class_id: e.target.value })} />
               <input className="rounded-2xl border p-3" placeholder="Display name" value={cameraForm.display_name} onChange={(e) => setCameraForm({ ...cameraForm, display_name: e.target.value })} />
               <input className="rounded-2xl border p-3" placeholder="RTSP URL" value={cameraForm.rtsp_url} onChange={(e) => setCameraForm({ ...cameraForm, rtsp_url: e.target.value })} />
               <label className="flex items-center gap-2 text-sm">
@@ -425,7 +425,7 @@ function App() {
             </tbody>
           </table>
           {attendanceSessions.length === 0 && (
-            <p className="px-3 py-4 text-slate-500">No attendance records yet for this classroom.</p>
+            <p className="px-3 py-4 text-slate-500">No attendance records yet for this class.</p>
           )}
         </div>
       </SectionCard>
@@ -446,9 +446,9 @@ function App() {
         <SectionCard title="Cameras">
           <div className="space-y-3">
             {cameras.map((camera) => (
-              <div key={camera.classroom_id} className="rounded-2xl border border-slate-200 p-4">
+              <div key={camera.class_id} className="rounded-2xl border border-slate-200 p-4">
                 <p className="font-semibold">{camera.display_name}</p>
-                <p className="text-sm text-slate-600">{camera.classroom_id}</p>
+                <p className="text-sm text-slate-600">{camera.class_id}</p>
                 <p className="text-sm text-slate-600 break-all">{camera.rtsp_url}</p>
               </div>
             ))}

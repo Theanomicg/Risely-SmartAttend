@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pgvector.utils import Vector as PgVector
 from sqlalchemy.exc import IntegrityError
@@ -75,7 +75,7 @@ async def checkin(payload: CheckEventRequest, session: AsyncSession = Depends(ge
         AttendanceEvent(
             uid=match.uid,
             event_type="checkin",
-            classroom_id=payload.classroom_id,
+            classroom_id=payload.class_id,
             source="kiosk",
         )
     )
@@ -99,7 +99,7 @@ async def checkout(payload: CheckEventRequest, session: AsyncSession = Depends(g
         AttendanceEvent(
             uid=match.uid,
             event_type="checkout",
-            classroom_id=payload.classroom_id,
+            classroom_id=payload.class_id,
             source="kiosk",
         )
     )
@@ -115,33 +115,40 @@ async def checkout(payload: CheckEventRequest, session: AsyncSession = Depends(g
 
 @app.get("/active-students", response_model=list[ActiveStudentResponse])
 async def active_students(
-    classroom_id: str | None = None,
+    class_id: str | None = Query(default=None, alias="class_id"),
+    classroom_id: str | None = Query(default=None, alias="classroom_id"),
     session: AsyncSession = Depends(get_db),
 ) -> list[ActiveStudentResponse]:
-    rows = await list_active_students(session, classroom_id)
+    rows = await list_active_students(session, class_id or classroom_id)
     return [ActiveStudentResponse(**row) for row in rows]
 
 
 @app.get("/attendance-sessions", response_model=list[AttendanceSessionResponse])
 async def attendance_sessions(
-    classroom_id: str | None = None,
+    class_id: str | None = Query(default=None, alias="class_id"),
+    classroom_id: str | None = Query(default=None, alias="classroom_id"),
     limit: int = 100,
     session: AsyncSession = Depends(get_db),
 ) -> list[AttendanceSessionResponse]:
-    rows = await list_attendance_sessions(session, classroom_id=classroom_id, limit=limit)
+    rows = await list_attendance_sessions(session, class_id=class_id or classroom_id, limit=limit)
     return [AttendanceSessionResponse(**row) for row in rows]
 
 
 @app.get("/alerts", response_model=list[AlertResponse])
-async def get_alerts(classroom_id: str | None = None, session: AsyncSession = Depends(get_db)) -> list[AlertResponse]:
+async def get_alerts(
+    class_id: str | None = Query(default=None, alias="class_id"),
+    classroom_id: str | None = Query(default=None, alias="classroom_id"),
+    session: AsyncSession = Depends(get_db),
+) -> list[AlertResponse]:
     query = (
         select(Alert, Student.name)
         .join(Student, Student.uid == Alert.uid)
         .where(Alert.status == "active")
         .order_by(desc(Alert.created_at))
     )
-    if classroom_id:
-        query = query.where(Alert.classroom_id == classroom_id)
+    effective_class_id = class_id or classroom_id
+    if effective_class_id:
+        query = query.where(Alert.classroom_id == effective_class_id)
 
     rows = (await session.execute(query)).all()
     alerts: list[AlertResponse] = []
@@ -152,7 +159,7 @@ async def get_alerts(classroom_id: str | None = None, session: AsyncSession = De
                 id=alert.id,
                 uid=alert.uid,
                 student_name=student_name,
-                classroom_id=alert.classroom_id,
+                class_id=alert.classroom_id,
                 status=alert.status,
                 duration_minutes=int(alert.payload.get("duration_minutes", 0)),
                 last_seen_at=datetime.fromisoformat(last_seen_raw) if last_seen_raw else None,
@@ -243,16 +250,26 @@ async def list_students(session: AsyncSession = Depends(get_db)) -> list[dict]:
 
 @app.post("/admin/cameras", response_model=CameraConfigOut)
 async def upsert_camera(config_in: CameraConfigIn, session: AsyncSession = Depends(get_db)) -> CameraConfigOut:
-    camera = await session.get(CameraConfig, config_in.classroom_id)
+    camera = await session.get(CameraConfig, config_in.class_id)
     if camera:
         camera.display_name = config_in.display_name
         camera.rtsp_url = config_in.rtsp_url
         camera.enabled = config_in.enabled
     else:
-        camera = CameraConfig(**config_in.model_dump())
+        camera = CameraConfig(
+            classroom_id=config_in.class_id,
+            display_name=config_in.display_name,
+            rtsp_url=config_in.rtsp_url,
+            enabled=config_in.enabled,
+        )
         session.add(camera)
     await session.commit()
-    return CameraConfigOut(**config_in.model_dump())
+    return CameraConfigOut(
+        class_id=camera.classroom_id,
+        display_name=camera.display_name,
+        rtsp_url=camera.rtsp_url,
+        enabled=camera.enabled,
+    )
 
 
 @app.get("/admin/cameras", response_model=list[CameraConfigOut])
@@ -260,7 +277,7 @@ async def list_cameras(session: AsyncSession = Depends(get_db)) -> list[CameraCo
     result = await session.execute(select(CameraConfig).order_by(CameraConfig.classroom_id))
     return [
         CameraConfigOut(
-            classroom_id=camera.classroom_id,
+            class_id=camera.classroom_id,
             display_name=camera.display_name,
             rtsp_url=camera.rtsp_url,
             enabled=camera.enabled,
@@ -287,11 +304,11 @@ async def update_settings(payload: MonitoringSettingsIn, session: AsyncSession =
     return MonitoringSettingsOut(**payload.model_dump())
 
 
-@app.websocket("/ws/alerts/{classroom_id}")
-async def alerts_websocket(websocket: WebSocket, classroom_id: str) -> None:
-    await manager.connect(classroom_id, websocket)
+@app.websocket("/ws/alerts/{class_id}")
+async def alerts_websocket(websocket: WebSocket, class_id: str) -> None:
+    await manager.connect(class_id, websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        await manager.disconnect(classroom_id, websocket)
+        await manager.disconnect(class_id, websocket)

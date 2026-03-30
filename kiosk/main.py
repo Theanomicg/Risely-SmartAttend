@@ -33,7 +33,7 @@ def load_env_file() -> None:
 @dataclass
 class KioskConfig:
     api_url: str = os.getenv("SMARTATTEND_API_URL", "http://localhost:8000")
-    classroom_id: str = os.getenv("SMARTATTEND_CLASSROOM_ID", "classroom-a")
+    class_id: str = os.getenv("SMARTATTEND_CLASS_ID", os.getenv("SMARTATTEND_CLASSROOM_ID", "class-10-a"))
     device_id: str = os.getenv("SMARTATTEND_DEVICE_ID", "pi-kiosk-01")
     camera_source: str = os.getenv("SMARTATTEND_CAMERA_SOURCE", "")
     camera_index: int = int(os.getenv("SMARTATTEND_CAMERA_INDEX", "1"))
@@ -114,7 +114,7 @@ class SmartAttendKiosk:
             response = requests.post(
                 endpoint,
                 json={
-                    "classroom_id": self.config.classroom_id,
+                    "class_id": self.config.class_id,
                     "device_id": self.config.device_id,
                     "embedding": embedding,
                 },
