@@ -28,7 +28,7 @@ docker compose up -d postgres
 Or from the repo root:
 
 ```powershell
-.\scripts\start-db.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\start-db.ps1
 ```
 
 If `.ps1` files open in an editor on your machine, use:
@@ -51,7 +51,7 @@ uvicorn app.main:app --reload
 Recommended on Windows:
 
 ```powershell
-.\scripts\start-backend.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\start-backend.ps1
 ```
 
 Or:
@@ -76,7 +76,7 @@ npm run dev
 Recommended on Windows:
 
 ```powershell
-.\scripts\start-dashboard.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\start-dashboard.ps1
 ```
 
 Or:
@@ -99,7 +99,7 @@ python main.py
 Recommended on Windows:
 
 ```powershell
-.\scripts\start-kiosk.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\start-kiosk.ps1
 ```
 
 Or:
@@ -116,6 +116,8 @@ Camera selection:
 
 ## Notes
 
+- The dashboard includes an attendance log that shows each student's date, check-in time, check-out time, and current session status.
+- The backend and kiosk startup scripts prefer their local `.venv` interpreters when present.
 - The backend expects PostgreSQL with the `vector` extension enabled.
 - DeepFace/ArcFace is GPU-optional but CPU-capable.
 - The current implementation assumes 128-dimensional embeddings to match the provided spec.

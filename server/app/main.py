@@ -17,6 +17,7 @@ from app.models import Alert, AttendanceEvent, CameraConfig, Student
 from app.monitoring import MonitoringService
 from app.schemas import (
     ActiveStudentResponse,
+    AttendanceSessionResponse,
     AlertAcknowledgeResponse,
     AlertDismissResponse,
     AlertResponse,
@@ -28,7 +29,7 @@ from app.schemas import (
     MonitoringSettingsOut,
     StudentRegistrationResponse,
 )
-from app.services.attendance import ensure_default_monitoring_config, list_active_students
+from app.services.attendance import ensure_default_monitoring_config, list_active_students, list_attendance_sessions
 from app.services.matching import find_best_student_match
 from app.ws import manager
 
@@ -119,6 +120,16 @@ async def active_students(
 ) -> list[ActiveStudentResponse]:
     rows = await list_active_students(session, classroom_id)
     return [ActiveStudentResponse(**row) for row in rows]
+
+
+@app.get("/attendance-sessions", response_model=list[AttendanceSessionResponse])
+async def attendance_sessions(
+    classroom_id: str | None = None,
+    limit: int = 100,
+    session: AsyncSession = Depends(get_db),
+) -> list[AttendanceSessionResponse]:
+    rows = await list_attendance_sessions(session, classroom_id=classroom_id, limit=limit)
+    return [AttendanceSessionResponse(**row) for row in rows]
 
 
 @app.get("/alerts", response_model=list[AlertResponse])

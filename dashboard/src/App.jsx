@@ -3,6 +3,58 @@ import { useEffect, useMemo, useState } from "react";
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const DEFAULT_CLASSROOM = import.meta.env.VITE_CLASSROOM_ID ?? "classroom-a";
 
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit"
+  }).format(date);
+}
+
+function formatTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
 function SectionCard({ title, children, action }) {
   return (
     <section className="rounded-3xl border border-white/70 bg-white/70 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur">
@@ -18,6 +70,7 @@ function SectionCard({ title, children, action }) {
 function App() {
   const [classroomId, setClassroomId] = useState(DEFAULT_CLASSROOM);
   const [activeStudents, setActiveStudents] = useState([]);
+  const [attendanceSessions, setAttendanceSessions] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [students, setStudents] = useState([]);
   const [cameras, setCameras] = useState([]);
@@ -53,11 +106,13 @@ function App() {
   };
 
   const refreshAttendance = async () => {
-    const [active, currentAlerts] = await Promise.all([
+    const [active, sessions, currentAlerts] = await Promise.all([
       fetchJson(`/active-students?classroom_id=${encodeURIComponent(classroomId)}`),
+      fetchJson(`/attendance-sessions?classroom_id=${encodeURIComponent(classroomId)}&limit=50`),
       fetchJson(`/alerts?classroom_id=${encodeURIComponent(classroomId)}`)
     ]);
     setActiveStudents(active);
+    setAttendanceSessions(sessions);
     setAlerts(currentAlerts);
   };
 
@@ -226,7 +281,10 @@ function App() {
                     <p className="font-semibold">{student.name}</p>
                     <p className="text-sm text-slate-600">UID: {student.uid}</p>
                     <p className="text-sm text-slate-600">Class: {student.class_id}</p>
-                    <p className="text-sm text-slate-600">Last seen: {student.last_seen_at ?? "Not yet detected"}</p>
+                    <p className="text-sm text-slate-600">Checked in: {formatDateTime(student.checked_in_at)}</p>
+                    <p className="text-sm text-slate-600">
+                      Last seen: {student.last_seen_at ? formatDateTime(student.last_seen_at) : "Not yet detected"}
+                    </p>
                   </article>
                 ))}
                 {activeStudents.length === 0 && <p className="text-slate-500">No active students for this classroom.</p>}
@@ -240,7 +298,9 @@ function App() {
                   <article key={alert.id} className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
                     <p className="font-semibold text-orange-900">{alert.student_name}</p>
                     <p className="text-sm text-orange-800">Missing for {alert.duration_minutes} minutes</p>
-                    <p className="text-sm text-orange-700">Last seen: {alert.last_seen_at ?? "No CCTV detection yet"}</p>
+                    <p className="text-sm text-orange-700">
+                      Last seen: {alert.last_seen_at ? formatDateTime(alert.last_seen_at) : "No CCTV detection yet"}
+                    </p>
                     <div className="mt-3 flex gap-2">
                       <button
                         className="rounded-xl bg-orange-600 px-4 py-2 text-sm font-medium text-white"
@@ -324,13 +384,59 @@ function App() {
         </SectionCard>
       </div>
 
+      <SectionCard title="Attendance Log">
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-separate border-spacing-y-2">
+            <thead>
+              <tr className="text-left text-sm uppercase tracking-[0.18em] text-slate-500">
+                <th className="px-3 py-2">Student</th>
+                <th className="px-3 py-2">Date</th>
+                <th className="px-3 py-2">Check in</th>
+                <th className="px-3 py-2">Check out</th>
+                <th className="px-3 py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendanceSessions.map((session) => {
+                const primaryTimestamp = session.checked_in_at ?? session.checked_out_at;
+                const statusLabel = session.status === "checked_in" ? "Checked in" : "Checked out";
+                const statusClasses =
+                  session.status === "checked_in"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-slate-200 text-slate-700";
+
+                return (
+                  <tr key={`${session.uid}-${session.checked_in_at ?? "none"}-${session.checked_out_at ?? "none"}`}>
+                    <td className="rounded-l-2xl bg-slate-50 px-3 py-3">
+                      <p className="font-semibold text-ink">{session.name}</p>
+                      <p className="text-sm text-slate-600">{session.uid}</p>
+                    </td>
+                    <td className="bg-slate-50 px-3 py-3 text-sm text-slate-700">{formatDate(primaryTimestamp)}</td>
+                    <td className="bg-slate-50 px-3 py-3 text-sm text-slate-700">{formatTime(session.checked_in_at)}</td>
+                    <td className="bg-slate-50 px-3 py-3 text-sm text-slate-700">{formatTime(session.checked_out_at)}</td>
+                    <td className="rounded-r-2xl bg-slate-50 px-3 py-3">
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${statusClasses}`}>
+                        {statusLabel}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {attendanceSessions.length === 0 && (
+            <p className="px-3 py-4 text-slate-500">No attendance records yet for this classroom.</p>
+          )}
+        </div>
+      </SectionCard>
+
       <section className="grid gap-6 lg:grid-cols-2">
         <SectionCard title="Students">
           <div className="space-y-3">
             {students.map((student) => (
               <div key={student.uid} className="rounded-2xl border border-slate-200 p-4">
                 <p className="font-semibold">{student.name}</p>
-                <p className="text-sm text-slate-600">{student.uid} · {student.class_id}</p>
+                <p className="text-sm text-slate-600">{student.uid} - {student.class_id}</p>
                 <p className="text-sm text-slate-600">{student.embedding_count} embeddings</p>
               </div>
             ))}

@@ -31,6 +31,16 @@ class ActiveStudentResponse(BaseModel):
     last_seen_at: datetime | None = None
 
 
+class AttendanceSessionResponse(BaseModel):
+    uid: str
+    name: str
+    class_id: str
+    classroom_id: str
+    checked_in_at: datetime | None = None
+    checked_out_at: datetime | None = None
+    status: str
+
+
 class StudentRegistrationResponse(BaseModel):
     uid: str
     name: str
