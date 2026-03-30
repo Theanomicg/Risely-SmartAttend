@@ -1,0 +1,6 @@
+services:
+  riselysmartattend:
+    image: riselysmartattend
+    build:
+      context: .
+      dockerfile: ./Dockerfile
