@@ -1,6 +1,4 @@
 services:
-  riselysmartattend:
-    image: riselysmartattend
-    build:
-      context: .
-      dockerfile: ./Dockerfile
+  postgres:
+    ports:
+      - "5432:5432"

@@ -19,37 +19,105 @@ SmartAttend is a monorepo for student attendance and classroom presence monitori
 
 ## Quick Start
 
+### Database
+
+```bash
+docker compose up -d postgres
+```
+
+Or from the repo root:
+
+```powershell
+.\scripts\start-db.ps1
+```
+
+If `.ps1` files open in an editor on your machine, use:
+
+```cmd
+scripts\start-db.cmd
+```
+
 ### Backend
 
 ```bash
 cd server
+copy .env.example .env
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
+Recommended on Windows:
+
+```powershell
+.\scripts\start-backend.ps1
+```
+
+Or:
+
+```cmd
+scripts\start-backend.cmd
+```
+
+Use `--reload` only if your local Python environment allows the watcher process. The canonical script runs without reload to avoid Windows named-pipe permission issues.
+
+The dashboard uses the local Vite proxy at `/api` and `/ws`, so restart the dashboard dev server after changing backend connectivity.
+
 ### Dashboard
 
 ```bash
 cd dashboard
+copy .env.example .env
 npm install
 npm run dev
+```
+
+Recommended on Windows:
+
+```powershell
+.\scripts\start-dashboard.ps1
+```
+
+Or:
+
+```cmd
+scripts\start-dashboard.cmd
 ```
 
 ### Kiosk
 
 ```bash
 cd kiosk
+copy .env.example .env
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 python main.py
 ```
 
+Recommended on Windows:
+
+```powershell
+.\scripts\start-kiosk.ps1
+```
+
+Or:
+
+```cmd
+scripts\start-kiosk.cmd
+```
+
+Camera selection:
+
+- The kiosk no longer defaults to camera index `0`.
+- Set `SMARTATTEND_CAMERA_INDEX=1` in [kiosk/.env](C:/Users/lamsa/Downloads/Risely-SmartAttend/kiosk/.env) to target the HD webcam instead of common virtual-camera slots.
+- On Windows, `SMARTATTEND_CAMERA_BACKEND=dshow` is the canonical backend for USB webcams.
+
 ## Notes
 
 - The backend expects PostgreSQL with the `vector` extension enabled.
 - DeepFace/ArcFace is GPU-optional but CPU-capable.
 - The current implementation assumes 128-dimensional embeddings to match the provided spec.
-
+- `compose.yaml` is the default Docker Compose entry point for this repo.
+- Canonical runtime entry points live in `scripts/` to keep local setup predictable.

@@ -1,6 +1,15 @@
 services:
-  riselysmartattend:
-    image: riselysmartattend
-    build:
-      context: .
-      dockerfile: ./Dockerfile
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: smartattend
+      POSTGRES_USER: smartattend
+      POSTGRES_PASSWORD: smartattend
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./server/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  pgdata:

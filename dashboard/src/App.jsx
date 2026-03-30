@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const DEFAULT_CLASSROOM = import.meta.env.VITE_CLASSROOM_ID ?? "classroom-a";
 
 function SectionCard({ title, children, action }) {
@@ -27,11 +27,27 @@ function App() {
   });
   const [studentForm, setStudentForm] = useState({ uid: "", name: "", class_id: "", photos: [] });
   const [cameraForm, setCameraForm] = useState({ classroom_id: "", display_name: "", rtsp_url: "", enabled: true });
+  const [studentStatus, setStudentStatus] = useState({ type: "", message: "" });
+  const [cameraStatus, setCameraStatus] = useState({ type: "", message: "" });
+  const [settingsStatus, setSettingsStatus] = useState({ type: "", message: "" });
 
   const fetchJson = async (path, options) => {
-    const response = await fetch(`${API_BASE}${path}`, options);
+    let response;
+    try {
+      response = await fetch(`${API_BASE}${path}`, options);
+    } catch (error) {
+      throw new Error(
+        "Failed to reach the backend. Check that the API is running and restart the dashboard dev server."
+      );
+    }
     if (!response.ok) {
-      throw new Error(await response.text());
+      const text = await response.text();
+      try {
+        const payload = JSON.parse(text);
+        throw new Error(payload.detail ?? text);
+      } catch {
+        throw new Error(text);
+      }
     }
     return response.json();
   };
@@ -64,8 +80,8 @@ function App() {
   }, [classroomId]);
 
   useEffect(() => {
-    const wsBase = API_BASE.replace(/^http/, "ws");
-    const socket = new WebSocket(`${wsBase}/ws/alerts/${classroomId}`);
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${protocol}//${window.location.host}/ws/alerts/${classroomId}`);
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data);
       if (payload.type === "absence_alert") {
@@ -105,34 +121,68 @@ function App() {
 
   const submitStudent = async (event) => {
     event.preventDefault();
+    setStudentStatus({ type: "", message: "" });
+
+    if (!studentForm.uid || !studentForm.name || !studentForm.class_id) {
+      setStudentStatus({ type: "error", message: "UID, full name, and class ID are required." });
+      return;
+    }
+
+    const selectedPhotos = Array.from(studentForm.photos ?? []);
+    if (selectedPhotos.length < 5) {
+      setStudentStatus({ type: "error", message: "Upload at least 5 photos for embedding generation." });
+      return;
+    }
+
     const formData = new FormData();
     formData.append("uid", studentForm.uid);
     formData.append("name", studentForm.name);
     formData.append("class_id", studentForm.class_id);
-    Array.from(studentForm.photos).forEach((file) => formData.append("photos", file));
-    await fetchJson("/admin/students", { method: "POST", body: formData });
-    setStudentForm({ uid: "", name: "", class_id: "", photos: [] });
-    await refreshAdmin();
+    selectedPhotos.forEach((file) => formData.append("photos", file));
+
+    try {
+      await fetchJson("/admin/students", { method: "POST", body: formData });
+      setStudentForm({ uid: "", name: "", class_id: "", photos: [] });
+      setStudentStatus({ type: "success", message: "Student created successfully." });
+      await refreshAdmin();
+    } catch (error) {
+      setStudentStatus({
+        type: "error",
+        message: error.message || "Student creation failed."
+      });
+    }
   };
 
   const submitCamera = async (event) => {
     event.preventDefault();
-    await fetchJson("/admin/cameras", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cameraForm)
-    });
-    setCameraForm({ classroom_id: "", display_name: "", rtsp_url: "", enabled: true });
-    await refreshAdmin();
+    setCameraStatus({ type: "", message: "" });
+    try {
+      await fetchJson("/admin/cameras", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cameraForm)
+      });
+      setCameraForm({ classroom_id: "", display_name: "", rtsp_url: "", enabled: true });
+      setCameraStatus({ type: "success", message: "Camera saved successfully." });
+      await refreshAdmin();
+    } catch (error) {
+      setCameraStatus({ type: "error", message: error.message || "Camera save failed." });
+    }
   };
 
   const saveSettings = async (event) => {
     event.preventDefault();
-    await fetchJson("/admin/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(settings)
-    });
+    setSettingsStatus({ type: "", message: "" });
+    try {
+      await fetchJson("/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings)
+      });
+      setSettingsStatus({ type: "success", message: "Monitoring settings updated." });
+    } catch (error) {
+      setSettingsStatus({ type: "error", message: error.message || "Settings update failed." });
+    }
   };
 
   return (
@@ -219,8 +269,14 @@ function App() {
               <h3 className="text-lg font-semibold">Register new student</h3>
               <input className="rounded-2xl border p-3" placeholder="UID" value={studentForm.uid} onChange={(e) => setStudentForm({ ...studentForm, uid: e.target.value })} />
               <input className="rounded-2xl border p-3" placeholder="Full name" value={studentForm.name} onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="Class ID" value={studentForm.class_id} onChange={(e) => setStudentForm({ ...studentForm, class_id: e.target.value })} />
+              <input className="rounded-2xl border p-3" placeholder="Class ID (example: Grade-10-A)" value={studentForm.class_id} onChange={(e) => setStudentForm({ ...studentForm, class_id: e.target.value })} />
               <input className="rounded-2xl border p-3" type="file" accept="image/*" multiple onChange={(e) => setStudentForm({ ...studentForm, photos: e.target.files })} />
+              <p className="text-sm text-slate-500">Use class ID for the student's academic group or section, for example `Grade-10-A`, `CS-2026`, or `Classroom-B1`.</p>
+              {studentStatus.message && (
+                <p className={`text-sm ${studentStatus.type === "error" ? "text-red-600" : "text-emerald-700"}`}>
+                  {studentStatus.message}
+                </p>
+              )}
               <button className="rounded-2xl bg-ink px-4 py-3 font-medium text-white" type="submit">Create student</button>
             </form>
 
@@ -233,6 +289,11 @@ function App() {
                 <input type="checkbox" checked={cameraForm.enabled} onChange={(e) => setCameraForm({ ...cameraForm, enabled: e.target.checked })} />
                 Enabled
               </label>
+              {cameraStatus.message && (
+                <p className={`text-sm ${cameraStatus.type === "error" ? "text-red-600" : "text-emerald-700"}`}>
+                  {cameraStatus.message}
+                </p>
+              )}
               <button className="rounded-2xl bg-mint px-4 py-3 font-medium text-white" type="submit">Save camera</button>
             </form>
 
@@ -252,6 +313,11 @@ function App() {
                 value={settings.absence_alert_threshold_minutes}
                 onChange={(e) => setSettings({ ...settings, absence_alert_threshold_minutes: Number(e.target.value) })}
               />
+              {settingsStatus.message && (
+                <p className={`text-sm ${settingsStatus.type === "error" ? "text-red-600" : "text-emerald-700"}`}>
+                  {settingsStatus.message}
+                </p>
+              )}
               <button className="rounded-2xl bg-signal px-4 py-3 font-medium text-white" type="submit">Update settings</button>
             </form>
           </div>

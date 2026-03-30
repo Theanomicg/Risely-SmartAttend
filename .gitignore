@@ -9,4 +9,6 @@ node_modules/
 dist/
 build/
 .DS_Store
-
+uvicorn.out.log
+uvicorn.err.log
+tmp_test_upload/

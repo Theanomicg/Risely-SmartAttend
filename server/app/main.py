@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pgvector.utils import Vector as PgVector
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -184,11 +185,28 @@ async def register_student(
         raise HTTPException(status_code=400, detail="Upload at least 5 photos.")
 
     image_bytes = [await file.read() for file in photos]
-    embeddings = extract_embeddings_from_bytes(image_bytes)
-    if not embeddings:
-        raise HTTPException(status_code=400, detail="No valid face embeddings extracted.")
+    try:
+        embeddings, failures = extract_embeddings_from_bytes(image_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Embedding generation failed: {exc}") from exc
+    if len(embeddings) < settings.min_registration_embeddings:
+        failure_summary = " ".join(failures[:3])
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Only {len(embeddings)} valid face embedding(s) were extracted. "
+                f"At least {settings.min_registration_embeddings} are required. {failure_summary}"
+            ).strip(),
+        )
 
-    student = Student(uid=uid, name=name, class_id=class_id, face_embeddings=embeddings)
+    student = Student(
+        uid=uid,
+        name=name,
+        class_id=class_id,
+        face_embeddings=[PgVector(embedding) for embedding in embeddings],
+    )
     session.add(student)
     try:
         await session.commit()
