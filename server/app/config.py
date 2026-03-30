@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
     monitoring_interval_minutes: int = Field(default=5, alias="MONITORING_INTERVAL_MINUTES")
     absence_alert_threshold_minutes: int = Field(default=15, alias="ABSENCE_ALERT_THRESHOLD_MINUTES")
     min_registration_embeddings: int = Field(default=3, alias="MIN_REGISTRATION_EMBEDDINGS")
+    enrollment_photo_dir: str = Field(default="storage/enrollment_photos", alias="ENROLLMENT_PHOTO_DIR")
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -33,6 +35,10 @@ class Settings(BaseSettings):
     @property
     def detector_backend_list(self) -> list[str]:
         return [backend.strip() for backend in self.detector_backends.split(",") if backend.strip()]
+
+    @property
+    def enrollment_photo_path(self) -> Path:
+        return Path(self.enrollment_photo_dir)
 
 
 @lru_cache

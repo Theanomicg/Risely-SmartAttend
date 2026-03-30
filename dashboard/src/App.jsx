@@ -438,6 +438,19 @@ function App() {
                 <p className="font-semibold">{student.name}</p>
                 <p className="text-sm text-slate-600">{student.uid} - {student.class_id}</p>
                 <p className="text-sm text-slate-600">{student.embedding_count} embeddings</p>
+                <p className="text-sm text-slate-600">{student.photo_count} saved enrollment photos</p>
+                {student.photos?.length > 0 && (
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {student.photos.map((photo) => (
+                      <img
+                        key={photo.id}
+                        src={photo.url}
+                        alt={`${student.name} enrollment ${photo.original_filename}`}
+                        className="h-24 w-full rounded-xl object-cover"
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

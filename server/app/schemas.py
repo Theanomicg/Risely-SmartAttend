@@ -41,11 +41,27 @@ class AttendanceSessionResponse(BaseModel):
     status: str
 
 
+class StudentPhotoResponse(BaseModel):
+    id: int
+    original_filename: str
+    url: str
+
+
 class StudentRegistrationResponse(BaseModel):
     uid: str
     name: str
     class_id: str
     embedding_count: int
+    photo_count: int
+
+
+class StudentListResponse(BaseModel):
+    uid: str
+    name: str
+    class_id: str
+    embedding_count: int
+    photo_count: int
+    photos: list[StudentPhotoResponse]
 
 
 class CameraConfigIn(BaseModel):

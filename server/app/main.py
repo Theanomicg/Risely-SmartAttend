@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pgvector.utils import Vector as PgVector
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import desc, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.db import Base, SessionLocal, engine, get_db
 from app.face import extract_embeddings_from_bytes
-from app.models import Alert, AttendanceEvent, CameraConfig, Student
+from app.models import Alert, AttendanceEvent, CameraConfig, Student, StudentPhoto
 from app.monitoring import MonitoringService
 from app.schemas import (
     ActiveStudentResponse,
@@ -27,10 +30,13 @@ from app.schemas import (
     CheckEventResponse,
     MonitoringSettingsIn,
     MonitoringSettingsOut,
+    StudentListResponse,
+    StudentPhotoResponse,
     StudentRegistrationResponse,
 )
 from app.services.attendance import ensure_default_monitoring_config, list_active_students, list_attendance_sessions
 from app.services.matching import find_best_student_match
+from app.storage import ensure_storage_dirs, resolve_student_photo, save_student_photo
 from app.ws import manager
 
 
@@ -49,6 +55,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup() -> None:
+    ensure_storage_dirs()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     monitoring_service.start()
@@ -226,26 +233,67 @@ async def register_student(
         face_embeddings=[PgVector(embedding) for embedding in embeddings],
     )
     session.add(student)
+    photo_count = 0
+    for upload, raw in zip(photos, image_bytes):
+        relative_path = save_student_photo(uid, upload.filename or "photo.jpg", raw)
+        session.add(
+            StudentPhoto(
+                uid=uid,
+                file_path=relative_path,
+                original_filename=upload.filename or Path(relative_path).name,
+            )
+        )
+        photo_count += 1
     try:
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
         raise HTTPException(status_code=409, detail="Student UID already exists.") from exc
-    return StudentRegistrationResponse(uid=uid, name=name, class_id=class_id, embedding_count=len(embeddings))
+    return StudentRegistrationResponse(
+        uid=uid,
+        name=name,
+        class_id=class_id,
+        embedding_count=len(embeddings),
+        photo_count=photo_count,
+    )
 
 
-@app.get("/admin/students")
-async def list_students(session: AsyncSession = Depends(get_db)) -> list[dict]:
-    result = await session.execute(select(Student).order_by(Student.name))
+@app.get("/admin/students", response_model=list[StudentListResponse])
+async def list_students(session: AsyncSession = Depends(get_db)) -> list[StudentListResponse]:
+    result = await session.execute(select(Student).options(selectinload(Student.photos)).order_by(Student.name))
     return [
-        {
-            "uid": student.uid,
-            "name": student.name,
-            "class_id": student.class_id,
-            "embedding_count": len(student.face_embeddings),
-        }
+        StudentListResponse(
+            uid=student.uid,
+            name=student.name,
+            class_id=student.class_id,
+            embedding_count=len(student.face_embeddings),
+            photo_count=len(student.photos),
+            photos=[
+                StudentPhotoResponse(
+                    id=photo.id,
+                    original_filename=photo.original_filename,
+                    url=f"/api/admin/students/{student.uid}/photos/{photo.id}",
+                )
+                for photo in student.photos
+            ],
+        )
         for student in result.scalars().all()
     ]
+
+
+@app.get("/admin/students/{uid}/photos/{photo_id}")
+async def get_student_photo(uid: str, photo_id: int, session: AsyncSession = Depends(get_db)) -> FileResponse:
+    photo = await session.scalar(select(StudentPhoto).where(StudentPhoto.uid == uid, StudentPhoto.id == photo_id))
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found.")
+
+    try:
+        file_path = resolve_student_photo(photo.file_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Photo file not found.")
+    return FileResponse(path=file_path, filename=photo.original_filename)
 
 
 @app.post("/admin/cameras", response_model=CameraConfigOut)

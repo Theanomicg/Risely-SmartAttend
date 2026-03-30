@@ -10,6 +10,8 @@ SmartAttend is a monorepo for student attendance and classroom presence monitori
 
 In this project, `class_id` is the primary identifier for an academic class such as `Class-10-A`. The teacher view, attendance logs, kiosk check-in/check-out flow, alerts, and camera configuration should all use the same `class_id` value.
 
+Student enrollment photos are now stored on the backend under `server/storage/enrollment_photos/` by default, while face embeddings remain stored in PostgreSQL for matching.
+
 ## Stack
 
 - Python 3.11+
@@ -50,6 +52,12 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
+Optional storage setting:
+
+```env
+ENROLLMENT_PHOTO_DIR=storage/enrollment_photos
+```
+
 Recommended on Windows:
 
 ```powershell
@@ -74,6 +82,8 @@ copy .env.example .env
 npm install
 npm run dev
 ```
+
+Set `VITE_CLASS_ID=class-10-a` in `dashboard/.env` so the teacher dashboard, attendance log, alerts, and camera view all point at the same academic class.
 
 Recommended on Windows:
 
@@ -120,6 +130,7 @@ Camera selection:
 ## Notes
 
 - The dashboard includes an attendance log that shows each student's date, check-in time, check-out time, and current session status.
+- Original student enrollment photos are saved on disk and are available in the admin panel for review.
 - The backend and kiosk startup scripts prefer their local `.venv` interpreters when present.
 - The backend expects PostgreSQL with the `vector` extension enabled.
 - DeepFace/ArcFace is GPU-optional but CPU-capable.

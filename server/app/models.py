@@ -30,6 +30,23 @@ class Student(Base):
         nullable=False,
         server_default=func.now(),
     )
+    photos: Mapped[list["StudentPhoto"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
+
+
+class StudentPhoto(Base):
+    __tablename__ = "student_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    uid: Mapped[str] = mapped_column(ForeignKey("students.uid", ondelete="CASCADE"), index=True)
+    file_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    student: Mapped[Student] = relationship()
 
 
 class AttendanceEvent(Base):
@@ -106,4 +123,3 @@ class Alert(Base):
     payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
     student: Mapped[Student] = relationship()
-
