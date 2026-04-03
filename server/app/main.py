@@ -34,6 +34,7 @@ from app.schemas import (
     MonitoringSettingsIn,
     MonitoringSettingsOut,
     StudentListResponse,
+    StudentDeleteResponse,
     StudentPhotoResponse,
     StudentRegistrationResponse,
     SystemStatusResponse,
@@ -50,7 +51,7 @@ from app.services.attendance import (
     validate_active_attendance_transition,
 )
 from app.services.matching import find_best_student_match
-from app.storage import ensure_storage_dirs, resolve_student_photo, save_student_photo
+from app.storage import delete_student_photo_dir, ensure_storage_dirs, resolve_student_photo, save_student_photo
 from app.ws import manager
 
 
@@ -421,6 +422,62 @@ async def list_students(session: AsyncSession = Depends(get_db)) -> list[Student
         )
         for student in result.scalars().all()
     ]
+
+
+@app.delete("/admin/students/{uid}", response_model=StudentDeleteResponse, dependencies=[Depends(require_admin_access)])
+async def delete_student(uid: str, session: AsyncSession = Depends(get_db)) -> StudentDeleteResponse:
+    student = await session.scalar(select(Student).where(Student.uid == uid))
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    active_alerts = list(
+        (
+            await session.scalars(
+                select(Alert).where(
+                    Alert.uid == uid,
+                    Alert.status == "active",
+                )
+            )
+        ).all()
+    )
+    alert_broadcasts = [
+        {
+            "id": str(alert.id),
+            "uid": alert.uid,
+            "class_id": alert.classroom_id,
+            "status": "resolved",
+        }
+        for alert in active_alerts
+    ]
+
+    await session.delete(student)
+    await session.commit()
+
+    photo_cleanup_warning = False
+    try:
+        delete_student_photo_dir(uid)
+    except Exception as exc:
+        photo_cleanup_warning = True
+        logger.warning("student photo cleanup failed: uid=%s error=%s", uid, exc)
+
+    for payload in alert_broadcasts:
+        await manager.broadcast(
+            payload["class_id"],
+            {
+                "type": "alert_resolved",
+                **payload,
+            },
+        )
+
+    return StudentDeleteResponse(
+        uid=uid,
+        deleted=True,
+        message=(
+            "Student deleted successfully."
+            if not photo_cleanup_warning
+            else "Student deleted, but some enrollment photo files could not be removed."
+        ),
+    )
 
 
 @app.get("/admin/students/{uid}/photos/{photo_id}", dependencies=[Depends(require_admin_access)])

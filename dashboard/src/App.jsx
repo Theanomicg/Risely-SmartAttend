@@ -39,6 +39,7 @@ function App() {
   const [studentStatus, setStudentStatus] = useState({ type: "", message: "" });
   const [cameraStatus, setCameraStatus] = useState({ type: "", message: "" });
   const [settingsStatus, setSettingsStatus] = useState({ type: "", message: "" });
+  const [deletingStudentUid, setDeletingStudentUid] = useState("");
   const effectiveClassId = useMemo(() => classId.trim() || DEFAULT_CLASS_ID, [classId]);
 
   const refreshSystemStatus = async () => {
@@ -238,6 +239,30 @@ function App() {
     }
   };
 
+  const deleteStudent = async (student) => {
+    const confirmed = window.confirm(
+      `Delete ${student.name} (${student.uid})? This removes the student, enrollment photos, attendance history, detections, active sessions, and alerts.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingStudentUid(student.uid);
+    setStudentStatus({ type: "", message: "" });
+    try {
+      const result = await fetchJson(`/admin/students/${encodeURIComponent(student.uid)}`, {
+        method: "DELETE",
+        role: "admin"
+      });
+      setStudentStatus({ type: "success", message: result.message || "Student deleted successfully." });
+      await Promise.all([refreshAdmin(), refreshAttendance()]);
+    } catch (error) {
+      setStudentStatus({ type: "error", message: error.message || "Student deletion failed." });
+    } finally {
+      setDeletingStudentUid("");
+    }
+  };
+
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-4 py-8 md:px-8">
       <header className="rounded-[2rem] bg-ink px-6 py-8 text-paper shadow-[0_24px_70px_rgba(15,23,42,0.28)]">
@@ -299,7 +324,11 @@ function App() {
       <AttendanceLog attendanceSessions={attendanceSessions} loading={loading.attendance} />
 
       <section className="grid gap-6 lg:grid-cols-2">
-        <StudentsList students={students} />
+        <StudentsList
+          students={students}
+          onDeleteStudent={deleteStudent}
+          deletingStudentUid={deletingStudentUid}
+        />
         <CamerasList cameras={cameras} />
       </section>
     </main>

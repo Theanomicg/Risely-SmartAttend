@@ -1,14 +1,26 @@
 import SectionCard from "./SectionCard";
 import { buildProtectedAssetUrl } from "../api";
 
-function StudentsList({ students }) {
+function StudentsList({ students, onDeleteStudent, deletingStudentUid }) {
   return (
     <SectionCard title="Students">
       <div className="space-y-3">
         {students.map((student) => (
           <div key={student.uid} className="rounded-2xl border border-slate-200 p-4">
-            <p className="font-semibold">{student.name}</p>
-            <p className="text-sm text-slate-600">{student.uid} - {student.class_id}</p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">{student.name}</p>
+                <p className="text-sm text-slate-600">{student.uid} - {student.class_id}</p>
+              </div>
+              <button
+                className="rounded-xl border border-rose-300 px-3 py-2 text-sm font-medium text-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => onDeleteStudent?.(student)}
+                type="button"
+                disabled={!onDeleteStudent || deletingStudentUid === student.uid}
+              >
+                {deletingStudentUid === student.uid ? "Deleting..." : "Delete"}
+              </button>
+            </div>
             <p className="text-sm text-slate-600">{student.embedding_count} embeddings</p>
             <p className="text-sm text-slate-600">{student.photo_count} saved enrollment photos</p>
             {student.photos?.length > 0 && (

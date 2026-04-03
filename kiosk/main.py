@@ -86,7 +86,7 @@ class KioskConfig:
     camera_source: str = field(default_factory=lambda: env_string("SMARTATTEND_CAMERA_SOURCE"))
     camera_index: int = field(default_factory=lambda: env_int("SMARTATTEND_CAMERA_INDEX", 1))
     camera_backend: str = field(default_factory=lambda: env_string("SMARTATTEND_CAMERA_BACKEND", default="auto"))
-    action: str = field(default_factory=lambda: env_string("SMARTATTEND_ACTION", default="checkin"))
+    action: str = field(default_factory=lambda: env_string("SMARTATTEND_ACTION", default="auto"))
     face_model: str = field(default_factory=lambda: env_string("SMARTATTEND_FACE_MODEL", default="ArcFace"))
     embedding_dim: int = field(default_factory=lambda: env_int("SMARTATTEND_EMBEDDING_DIM", 128))
 
@@ -97,8 +97,8 @@ class KioskConfig:
         self.camera_backend = self.camera_backend.strip().lower() or "auto"
         self.face_model = self.face_model.strip() or "ArcFace"
         self.action = self.action.strip().lower().lstrip("/")
-        if self.action not in {"checkin", "checkout"}:
-            raise ValueError("SMARTATTEND_ACTION must be either 'checkin' or 'checkout'.")
+        if self.action not in {"auto", "checkin", "checkout"}:
+            raise ValueError("SMARTATTEND_ACTION must be 'auto', 'checkin', or 'checkout'.")
 
 
 class SmartAttendKiosk:
@@ -168,19 +168,8 @@ class SmartAttendKiosk:
             self._render_status(frame, f"Face error: {exc}", (0, 0, 255))
             return
 
-        endpoint = f"{self.config.api_url}/{self.config.action.lstrip('/')}"
         try:
-            response = requests.post(
-                endpoint,
-                json={
-                    "class_id": self.config.class_id,
-                    "device_id": self.config.device_id,
-                    "embedding": embedding,
-                },
-                timeout=10,
-            )
-            response.raise_for_status()
-            payload = response.json()
+            payload = self.submit_attendance(embedding)
         except RequestException as exc:
             self._render_status(frame, f"Server error: {exc}", (0, 0, 255))
             return
@@ -189,9 +178,36 @@ class SmartAttendKiosk:
             return
 
         if payload.get("success"):
-            self._render_status(frame, payload.get("student_name", "Matched"), (0, 180, 0))
+            self._render_status(frame, self._success_message(payload), (0, 180, 0))
         else:
             self._render_status(frame, payload.get("message", "Recognition failed."), (0, 0, 255))
+
+    def submit_attendance(self, embedding: list[float]) -> dict:
+        payload = {
+            "class_id": self.config.class_id,
+            "device_id": self.config.device_id,
+            "embedding": embedding,
+        }
+        if self.config.action != "auto":
+            return self._post_action(self.config.action, payload)
+
+        checkin_result = self._post_action("checkin", payload)
+        if checkin_result.get("success") and checkin_result.get("message") == "Student already checked in.":
+            return self._post_action("checkout", payload)
+        return checkin_result
+
+    def _post_action(self, action: str, payload: dict) -> dict:
+        endpoint = f"{self.config.api_url}/{action.lstrip('/')}"
+        response = requests.post(endpoint, json=payload, timeout=10)
+        response.raise_for_status()
+        return response.json()
+
+    def _success_message(self, payload: dict) -> str:
+        student_name = payload.get("student_name")
+        message = payload.get("message")
+        if student_name and message:
+            return f"{student_name}: {message}"
+        return message or student_name or "Matched"
 
     def extract_embedding(self, frame: np.ndarray) -> list[float]:
         deepface = load_deepface()

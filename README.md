@@ -49,7 +49,7 @@ copy .env.example .env
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Optional storage setting:
@@ -70,9 +70,9 @@ Or:
 scripts\start-backend.cmd
 ```
 
-Use `--reload` only if your local Python environment allows the watcher process. The canonical script runs without reload to avoid Windows named-pipe permission issues.
+Use `--reload` only if your local Python environment allows the watcher process. The canonical script runs without reload to avoid Windows named-pipe permission issues and to respect `SERVER_HOST` / `SERVER_PORT` from `server/.env`.
 
-The dashboard uses the local Vite proxy at `/api` and `/ws`, so restart the dashboard dev server after changing backend connectivity.
+The dashboard uses the local Vite proxy at `/api` and `/ws`, so restart the dashboard dev server after changing backend connectivity. If you change the backend port from the default `8000`, also update `VITE_PROXY_TARGET` and `VITE_WS_PROXY_TARGET` in `dashboard/.env`.
 
 ### Dashboard
 
@@ -84,6 +84,7 @@ npm run dev
 ```
 
 Set `VITE_CLASS_ID=class-10-a` in `dashboard/.env` so the teacher dashboard, attendance log, alerts, and camera view all point at the same academic class.
+If your backend is not running on `http://127.0.0.1:8000`, also set `VITE_PROXY_TARGET` and `VITE_WS_PROXY_TARGET` in `dashboard/.env` to match the backend URL.
 If you enable backend auth, also set `VITE_TEACHER_TOKEN` and `VITE_ADMIN_TOKEN` in `dashboard/.env`.
 
 Recommended on Windows:
@@ -124,8 +125,9 @@ scripts\start-kiosk.cmd
 Camera selection:
 
 - The kiosk no longer defaults to camera index `0`.
-- Set `SMARTATTEND_CLASS_ID=class-10-a` in [kiosk/.env](C:/Users/lamsa/Downloads/Risely-SmartAttend/kiosk/.env) so kiosk events are recorded for the correct class.
-- Set `SMARTATTEND_CAMERA_INDEX=1` in [kiosk/.env](C:/Users/lamsa/Downloads/Risely-SmartAttend/kiosk/.env) to target the HD webcam instead of common virtual-camera slots.
+- `SMARTATTEND_API_URL=auto` in `kiosk/.env` makes the kiosk derive the backend URL from `server/.env`.
+- Set `SMARTATTEND_CLASS_ID=class-10-a` in `kiosk/.env` so kiosk events are recorded for the correct class.
+- Set `SMARTATTEND_CAMERA_INDEX=1` in `kiosk/.env` to target the HD webcam instead of common virtual-camera slots.
 - On Windows, `SMARTATTEND_CAMERA_BACKEND=dshow` is the canonical backend for USB webcams.
 
 ## Notes

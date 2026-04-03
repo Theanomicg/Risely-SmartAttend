@@ -55,6 +55,12 @@ class StudentRegistrationResponse(BaseModel):
     photo_count: int
 
 
+class StudentDeleteResponse(BaseModel):
+    uid: str
+    deleted: bool
+    message: str
+
+
 class StudentListResponse(BaseModel):
     uid: str
     name: str

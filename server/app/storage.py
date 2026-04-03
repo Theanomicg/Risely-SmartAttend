@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from uuid import uuid4
 
@@ -39,3 +40,12 @@ def resolve_student_photo(relative_path: str) -> Path:
     if base_path not in file_path.parents and file_path != base_path:
         raise ValueError("Invalid photo path.")
     return file_path
+
+
+def delete_student_photo_dir(uid: str) -> None:
+    base_path = settings.enrollment_photo_path.resolve()
+    target_dir = student_photo_dir(uid).resolve()
+    if base_path not in target_dir.parents:
+        raise ValueError("Invalid student photo directory.")
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
