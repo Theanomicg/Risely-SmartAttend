@@ -118,6 +118,10 @@ function App() {
     };
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data);
+      if (payload.type === "attendance_changed") {
+        refreshAttendance();
+        return;
+      }
       if (payload.type === "absence_alert") {
         setAlerts((current) => {
           const exists = current.some((item) => item.id === payload.id);

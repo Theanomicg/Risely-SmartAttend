@@ -80,6 +80,25 @@ def mask_rtsp_url(value: str) -> str:
     return f"{scheme}://***:***@{host}"
 
 
+async def broadcast_attendance_changed(
+    *,
+    class_id: str,
+    uid: str,
+    status: str,
+    student_name: str | None = None,
+) -> None:
+    await manager.broadcast(
+        class_id,
+        {
+            "type": "attendance_changed",
+            "class_id": class_id,
+            "uid": uid,
+            "status": status,
+            "student_name": student_name,
+        },
+    )
+
+
 @app.on_event("startup")
 async def startup() -> None:
     ensure_storage_dirs()
@@ -162,9 +181,15 @@ async def checkin(payload: CheckEventRequest, session: AsyncSession = Depends(ge
                 uid=match.uid,
                 student_name=match.student_name,
                 confidence=match.confidence,
-            )
+        )
         raise HTTPException(status_code=409, detail="Active attendance state conflict.") from exc
     logger.info("checkin recorded: uid=%s class_id=%s", match.uid, payload.class_id)
+    await broadcast_attendance_changed(
+        class_id=payload.class_id,
+        uid=match.uid,
+        status="checked_in",
+        student_name=match.student_name,
+    )
     return CheckEventResponse(
         success=True,
         message=decision.message,
@@ -229,6 +254,12 @@ async def checkout(payload: CheckEventRequest, session: AsyncSession = Depends(g
             },
         )
     logger.info("checkout recorded: uid=%s class_id=%s", match.uid, payload.class_id)
+    await broadcast_attendance_changed(
+        class_id=payload.class_id,
+        uid=match.uid,
+        status="checked_out",
+        student_name=match.student_name,
+    )
     return CheckEventResponse(
         success=True,
         message=decision.message,
@@ -429,6 +460,7 @@ async def delete_student(uid: str, session: AsyncSession = Depends(get_db)) -> S
     student = await session.scalar(select(Student).where(Student.uid == uid))
     if not student:
         raise HTTPException(status_code=404, detail="Student not found.")
+    active_session = await get_active_attendance_session(session, uid)
 
     active_alerts = list(
         (
@@ -467,6 +499,13 @@ async def delete_student(uid: str, session: AsyncSession = Depends(get_db)) -> S
                 "type": "alert_resolved",
                 **payload,
             },
+        )
+    if active_session:
+        await broadcast_attendance_changed(
+            class_id=active_session.classroom_id,
+            uid=uid,
+            status="deleted",
+            student_name=student.name,
         )
 
     return StudentDeleteResponse(
