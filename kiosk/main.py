@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import cv2
@@ -11,36 +11,94 @@ import requests
 from requests import RequestException
 
 
-def load_deepface():
-    from deepface import DeepFace
-
-    return DeepFace
-
-
-def load_env_file() -> None:
-    env_path = Path(__file__).with_name(".env")
+def parse_env_file(env_path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
     if not env_path.exists():
-        return
+        return values
 
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
+        values[key.strip()] = value.strip().strip("'").strip('"')
+    return values
+
+
+def env_string(primary_key: str, fallback_key: str | None = None, default: str = "") -> str:
+    if fallback_key:
+        return os.getenv(primary_key, os.getenv(fallback_key, default))
+    return os.getenv(primary_key, default)
+
+
+def env_int(key: str, default: int) -> int:
+    raw_value = os.getenv(key)
+    if raw_value is None:
+        return default
+    return int(raw_value)
+
+
+def load_deepface():
+    from deepface import DeepFace
+
+    return DeepFace
+
+
+def load_env_file(env_path: Path | None = None) -> dict[str, str]:
+    env_file = env_path or Path(__file__).with_name(".env")
+    values = parse_env_file(env_file)
+    for key, value in values.items():
+        os.environ[key] = value
+    return values
+
+
+def normalize_api_host(host: str) -> str:
+    normalized = host.strip()
+    if not normalized or normalized in {"0.0.0.0", "::", "[::]"}:
+        return "127.0.0.1"
+    return normalized
+
+
+def infer_backend_api_url(default: str = "http://localhost:8000") -> str:
+    configured_api_url = env_string("SMARTATTEND_API_URL").strip()
+    if configured_api_url and configured_api_url.lower() != "auto":
+        return configured_api_url
+
+    server_env_path = Path(__file__).resolve().parents[1] / "server" / ".env"
+    server_values = parse_env_file(server_env_path)
+    if not server_values:
+        return default
+
+    host = normalize_api_host(server_values.get("SERVER_HOST", "127.0.0.1"))
+    port = server_values.get("SERVER_PORT", "8000").strip() or "8000"
+    if not port.isdigit():
+        port = "8000"
+    return f"http://{host}:{port}"
 
 
 @dataclass
 class KioskConfig:
-    api_url: str = os.getenv("SMARTATTEND_API_URL", "http://localhost:8000")
-    class_id: str = os.getenv("SMARTATTEND_CLASS_ID", os.getenv("SMARTATTEND_CLASSROOM_ID", "class-10-a"))
-    device_id: str = os.getenv("SMARTATTEND_DEVICE_ID", "pi-kiosk-01")
-    camera_source: str = os.getenv("SMARTATTEND_CAMERA_SOURCE", "")
-    camera_index: int = int(os.getenv("SMARTATTEND_CAMERA_INDEX", "1"))
-    camera_backend: str = os.getenv("SMARTATTEND_CAMERA_BACKEND", "auto")
-    action: str = os.getenv("SMARTATTEND_ACTION", "checkin")
-    face_model: str = os.getenv("SMARTATTEND_FACE_MODEL", "ArcFace")
-    embedding_dim: int = int(os.getenv("SMARTATTEND_EMBEDDING_DIM", "128"))
+    api_url: str = field(default_factory=infer_backend_api_url)
+    class_id: str = field(
+        default_factory=lambda: env_string("SMARTATTEND_CLASS_ID", "SMARTATTEND_CLASSROOM_ID", "class-10-a")
+    )
+    device_id: str = field(default_factory=lambda: env_string("SMARTATTEND_DEVICE_ID", default="pi-kiosk-01"))
+    camera_source: str = field(default_factory=lambda: env_string("SMARTATTEND_CAMERA_SOURCE"))
+    camera_index: int = field(default_factory=lambda: env_int("SMARTATTEND_CAMERA_INDEX", 1))
+    camera_backend: str = field(default_factory=lambda: env_string("SMARTATTEND_CAMERA_BACKEND", default="auto"))
+    action: str = field(default_factory=lambda: env_string("SMARTATTEND_ACTION", default="checkin"))
+    face_model: str = field(default_factory=lambda: env_string("SMARTATTEND_FACE_MODEL", default="ArcFace"))
+    embedding_dim: int = field(default_factory=lambda: env_int("SMARTATTEND_EMBEDDING_DIM", 128))
+
+    def __post_init__(self) -> None:
+        self.api_url = self.api_url.rstrip("/")
+        self.class_id = self.class_id.strip() or "class-10-a"
+        self.device_id = self.device_id.strip() or "pi-kiosk-01"
+        self.camera_backend = self.camera_backend.strip().lower() or "auto"
+        self.face_model = self.face_model.strip() or "ArcFace"
+        self.action = self.action.strip().lower().lstrip("/")
+        if self.action not in {"checkin", "checkout"}:
+            raise ValueError("SMARTATTEND_ACTION must be either 'checkin' or 'checkout'.")
 
 
 class SmartAttendKiosk:
@@ -52,6 +110,7 @@ class SmartAttendKiosk:
         self.capture = cv2.VideoCapture(source, backend)
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        print(f"SmartAttend kiosk API base={self.config.api_url}")
         print(f"SmartAttend kiosk camera source={self.source!r} backend={self.backend}")
 
     def _resolve_camera_target(self) -> tuple[int | str, int]:

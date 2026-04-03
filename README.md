@@ -84,6 +84,7 @@ npm run dev
 ```
 
 Set `VITE_CLASS_ID=class-10-a` in `dashboard/.env` so the teacher dashboard, attendance log, alerts, and camera view all point at the same academic class.
+If you enable backend auth, also set `VITE_TEACHER_TOKEN` and `VITE_ADMIN_TOKEN` in `dashboard/.env`.
 
 Recommended on Windows:
 
@@ -129,6 +130,9 @@ Camera selection:
 
 ## Notes
 
+- Optional token-based access control is available through `TEACHER_TOKEN` and `ADMIN_TOKEN` in `server/.env`. When unset, auth remains disabled for local development.
+- Camera URLs returned by the admin API are masked in the dashboard; the raw RTSP URL is no longer exposed in list responses.
+- The admin panel now shows camera runtime health reported by the backend monitoring loop.
 - The dashboard includes an attendance log that shows each student's date, check-in time, check-out time, and current session status.
 - Original student enrollment photos are saved on disk and are available in the admin panel for review.
 - The backend and kiosk startup scripts prefer their local `.venv` interpreters when present.

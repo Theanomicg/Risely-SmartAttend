@@ -1,71 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
-const DEFAULT_CLASS_ID = import.meta.env.VITE_CLASS_ID ?? import.meta.env.VITE_CLASSROOM_ID ?? "class-10-a";
-
-function formatDateTime(value) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
-}
-
-function formatDate(value) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit"
-  }).format(date);
-}
-
-function formatTime(value) {
-  if (!value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
-}
-
-function SectionCard({ title, children, action }) {
-  return (
-    <section className="rounded-3xl border border-white/70 bg-white/70 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur">
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <h2 className="font-display text-2xl text-ink">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
+import AdminPanel from "./components/AdminPanel";
+import AttendanceLog from "./components/AttendanceLog";
+import StatusBanner from "./components/StatusBanner";
+import TeacherDashboard from "./components/TeacherDashboard";
+import { CamerasList, StudentsList } from "./components/ResourceLists";
+import {
+  DEFAULT_CLASS_ID,
+  buildAlertsWebSocketUrl,
+  fetchJson,
+  fetchPublicJson
+} from "./api";
 
 function App() {
   const [classId, setClassId] = useState(DEFAULT_CLASS_ID);
@@ -74,69 +19,102 @@ function App() {
   const [alerts, setAlerts] = useState([]);
   const [students, setStudents] = useState([]);
   const [cameras, setCameras] = useState([]);
+  const [cameraStatuses, setCameraStatuses] = useState([]);
   const [settings, setSettings] = useState({
     monitoring_interval_minutes: 5,
     absence_alert_threshold_minutes: 15
   });
+  const [systemStatus, setSystemStatus] = useState({
+    api_status: "unknown",
+    auth_enabled: false
+  });
+  const [loading, setLoading] = useState({
+    attendance: true,
+    admin: true
+  });
+  const [teacherError, setTeacherError] = useState("");
+  const [adminError, setAdminError] = useState("");
   const [studentForm, setStudentForm] = useState({ uid: "", name: "", class_id: "", photos: [] });
   const [cameraForm, setCameraForm] = useState({ class_id: "", display_name: "", rtsp_url: "", enabled: true });
   const [studentStatus, setStudentStatus] = useState({ type: "", message: "" });
   const [cameraStatus, setCameraStatus] = useState({ type: "", message: "" });
   const [settingsStatus, setSettingsStatus] = useState({ type: "", message: "" });
+  const effectiveClassId = useMemo(() => classId.trim() || DEFAULT_CLASS_ID, [classId]);
 
-  const fetchJson = async (path, options) => {
-    let response;
+  const refreshSystemStatus = async () => {
     try {
-      response = await fetch(`${API_BASE}${path}`, options);
-    } catch (error) {
-      throw new Error(
-        "Failed to reach the backend. Check that the API is running and restart the dashboard dev server."
-      );
+      const status = await fetchPublicJson("/health");
+      setSystemStatus(status);
+    } catch {
+      setSystemStatus({ api_status: "offline", auth_enabled: false });
     }
-    if (!response.ok) {
-      const text = await response.text();
-      try {
-        const payload = JSON.parse(text);
-        throw new Error(payload.detail ?? text);
-      } catch {
-        throw new Error(text);
-      }
-    }
-    return response.json();
   };
 
   const refreshAttendance = async () => {
-    const [active, sessions, currentAlerts] = await Promise.all([
-      fetchJson(`/active-students?class_id=${encodeURIComponent(classId)}`),
-      fetchJson(`/attendance-sessions?class_id=${encodeURIComponent(classId)}&limit=50`),
-      fetchJson(`/alerts?class_id=${encodeURIComponent(classId)}`)
-    ]);
-    setActiveStudents(active);
-    setAttendanceSessions(sessions);
-    setAlerts(currentAlerts);
+    setLoading((current) => ({ ...current, attendance: true }));
+    try {
+      const [active, sessions, currentAlerts] = await Promise.all([
+        fetchJson(`/active-students?class_id=${encodeURIComponent(effectiveClassId)}`),
+        fetchJson(`/attendance-sessions?class_id=${encodeURIComponent(effectiveClassId)}&limit=50`),
+        fetchJson(`/alerts?class_id=${encodeURIComponent(effectiveClassId)}`)
+      ]);
+      setActiveStudents(active);
+      setAttendanceSessions(sessions);
+      setAlerts(currentAlerts);
+      setTeacherError("");
+    } catch (error) {
+      setTeacherError(error.message || "Teacher data request failed.");
+    } finally {
+      setLoading((current) => ({ ...current, attendance: false }));
+    }
   };
 
   const refreshAdmin = async () => {
-    const [allStudents, allCameras, monitoringSettings] = await Promise.all([
-      fetchJson("/admin/students"),
-      fetchJson("/admin/cameras"),
-      fetchJson("/admin/settings")
-    ]);
-    setStudents(allStudents);
-    setCameras(allCameras);
-    setSettings(monitoringSettings);
+    setLoading((current) => ({ ...current, admin: true }));
+    try {
+      const [allStudents, allCameras, monitoringSettings, statusItems] = await Promise.all([
+        fetchJson("/admin/students", { role: "admin" }),
+        fetchJson("/admin/cameras", { role: "admin" }),
+        fetchJson("/admin/settings", { role: "admin" }),
+        fetchJson("/admin/camera-status", { role: "admin" })
+      ]);
+      setStudents(allStudents);
+      setCameras(allCameras);
+      setSettings(monitoringSettings);
+      setCameraStatuses(statusItems);
+      setAdminError("");
+    } catch (error) {
+      setAdminError(error.message || "Admin data request failed.");
+    } finally {
+      setLoading((current) => ({ ...current, admin: false }));
+    }
   };
 
   useEffect(() => {
-    refreshAttendance();
-    refreshAdmin();
-    const pollId = window.setInterval(refreshAttendance, 15000);
-    return () => window.clearInterval(pollId);
-  }, [classId]);
+    refreshSystemStatus();
+  }, []);
 
   useEffect(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${protocol}//${window.location.host}/ws/alerts/${classId}`);
+    refreshAttendance();
+    const attendancePollId = window.setInterval(refreshAttendance, 15000);
+    return () => {
+      window.clearInterval(attendancePollId);
+    };
+  }, [effectiveClassId]);
+
+  useEffect(() => {
+    refreshAdmin();
+    const adminPollId = window.setInterval(refreshAdmin, 30000);
+    return () => {
+      window.clearInterval(adminPollId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const socket = new WebSocket(buildAlertsWebSocketUrl(effectiveClassId));
+    socket.onopen = () => {
+      setTeacherError((current) => (current === "Alert websocket disconnected." ? "" : current));
+    };
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data);
       if (payload.type === "absence_alert") {
@@ -144,7 +122,14 @@ function App() {
           const exists = current.some((item) => item.id === payload.id);
           return exists ? current : [payload, ...current];
         });
+        return;
       }
+      if (payload.type === "alert_resolved") {
+        setAlerts((current) => current.filter((item) => item.id !== payload.id));
+      }
+    };
+    socket.onerror = () => {
+      setTeacherError((current) => current || "Alert websocket disconnected.");
     };
     const heartbeat = window.setInterval(() => {
       if (socket.readyState === WebSocket.OPEN) {
@@ -155,7 +140,7 @@ function App() {
       window.clearInterval(heartbeat);
       socket.close();
     };
-  }, [classId]);
+  }, [effectiveClassId]);
 
   const summary = useMemo(() => {
     return {
@@ -165,13 +150,23 @@ function App() {
   }, [activeStudents, alerts]);
 
   const acknowledgeAlert = async (id) => {
-    await fetchJson(`/alerts/${id}/acknowledge`, { method: "POST" });
-    setAlerts((current) => current.filter((alert) => alert.id !== id));
+    try {
+      await fetchJson(`/alerts/${id}/acknowledge`, { method: "POST" });
+      setAlerts((current) => current.filter((alert) => alert.id !== id));
+      setTeacherError("");
+    } catch (error) {
+      setTeacherError(error.message || "Failed to acknowledge alert.");
+    }
   };
 
   const dismissAlert = async (id) => {
-    await fetchJson(`/alerts/${id}/dismiss`, { method: "POST" });
-    setAlerts((current) => current.filter((alert) => alert.id !== id));
+    try {
+      await fetchJson(`/alerts/${id}/dismiss`, { method: "POST" });
+      setAlerts((current) => current.filter((alert) => alert.id !== id));
+      setTeacherError("");
+    } catch (error) {
+      setTeacherError(error.message || "Failed to dismiss alert.");
+    }
   };
 
   const submitStudent = async (event) => {
@@ -196,7 +191,7 @@ function App() {
     selectedPhotos.forEach((file) => formData.append("photos", file));
 
     try {
-      await fetchJson("/admin/students", { method: "POST", body: formData });
+      await fetchJson("/admin/students", { method: "POST", body: formData, role: "admin" });
       setStudentForm({ uid: "", name: "", class_id: "", photos: [] });
       setStudentStatus({ type: "success", message: "Student created successfully." });
       await refreshAdmin();
@@ -215,7 +210,8 @@ function App() {
       await fetchJson("/admin/cameras", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cameraForm)
+        body: JSON.stringify(cameraForm),
+        role: "admin"
       });
       setCameraForm({ class_id: "", display_name: "", rtsp_url: "", enabled: true });
       setCameraStatus({ type: "success", message: "Camera saved successfully." });
@@ -232,9 +228,11 @@ function App() {
       await fetchJson("/admin/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings)
+        body: JSON.stringify(settings),
+        role: "admin"
       });
       setSettingsStatus({ type: "success", message: "Monitoring settings updated." });
+      await refreshAdmin();
     } catch (error) {
       setSettingsStatus({ type: "error", message: error.message || "Settings update failed." });
     }
@@ -259,6 +257,8 @@ function App() {
         </div>
       </header>
 
+      <StatusBanner systemStatus={systemStatus} teacherError={teacherError} adminError={adminError} />
+
       <section className="grid gap-4 md:grid-cols-2">
         <div className="rounded-3xl bg-mint p-6 text-white shadow-lg">
           <p className="text-sm uppercase tracking-[0.24em] text-emerald-100">Checked in</p>
@@ -271,202 +271,36 @@ function App() {
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <SectionCard title="Teacher Dashboard">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div>
-              <h3 className="mb-3 text-lg font-semibold text-ink">Live checked-in students</h3>
-              <div className="space-y-3">
-                {activeStudents.map((student) => (
-                  <article key={student.uid} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="font-semibold">{student.name}</p>
-                    <p className="text-sm text-slate-600">UID: {student.uid}</p>
-                    <p className="text-sm text-slate-600">Class: {student.class_id}</p>
-                    <p className="text-sm text-slate-600">Checked in: {formatDateTime(student.checked_in_at)}</p>
-                    <p className="text-sm text-slate-600">
-                      Last seen: {student.last_seen_at ? formatDateTime(student.last_seen_at) : "Not yet detected"}
-                    </p>
-                  </article>
-                ))}
-                {activeStudents.length === 0 && <p className="text-slate-500">No active students for this class.</p>}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="mb-3 text-lg font-semibold text-ink">Real-time absence alerts</h3>
-              <div className="space-y-3">
-                {alerts.map((alert) => (
-                  <article key={alert.id} className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
-                    <p className="font-semibold text-orange-900">{alert.student_name}</p>
-                    <p className="text-sm text-orange-800">Missing for {alert.duration_minutes} minutes</p>
-                    <p className="text-sm text-orange-700">
-                      Last seen: {alert.last_seen_at ? formatDateTime(alert.last_seen_at) : "No CCTV detection yet"}
-                    </p>
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        className="rounded-xl bg-orange-600 px-4 py-2 text-sm font-medium text-white"
-                        onClick={() => acknowledgeAlert(alert.id)}
-                      >
-                        Acknowledge
-                      </button>
-                      <button
-                        className="rounded-xl border border-orange-300 px-4 py-2 text-sm font-medium text-orange-800"
-                        onClick={() => dismissAlert(alert.id)}
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  </article>
-                ))}
-                {alerts.length === 0 && <p className="text-slate-500">No active alerts.</p>}
-              </div>
-            </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard title="Admin Panel">
-          <div className="space-y-6">
-            <form className="grid gap-3" onSubmit={submitStudent}>
-              <h3 className="text-lg font-semibold">Register new student</h3>
-              <input className="rounded-2xl border p-3" placeholder="UID" value={studentForm.uid} onChange={(e) => setStudentForm({ ...studentForm, uid: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="Full name" value={studentForm.name} onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="Class ID (example: Grade-10-A)" value={studentForm.class_id} onChange={(e) => setStudentForm({ ...studentForm, class_id: e.target.value })} />
-              <input className="rounded-2xl border p-3" type="file" accept="image/*" multiple onChange={(e) => setStudentForm({ ...studentForm, photos: e.target.files })} />
-              <p className="text-sm text-slate-500">Use class ID for the student's academic group or section, for example `Grade-10-A`, `CS-2026`, or `Classroom-B1`.</p>
-              {studentStatus.message && (
-                <p className={`text-sm ${studentStatus.type === "error" ? "text-red-600" : "text-emerald-700"}`}>
-                  {studentStatus.message}
-                </p>
-              )}
-              <button className="rounded-2xl bg-ink px-4 py-3 font-medium text-white" type="submit">Create student</button>
-            </form>
-
-            <form className="grid gap-3" onSubmit={submitCamera}>
-              <h3 className="text-lg font-semibold">Configure camera</h3>
-              <input className="rounded-2xl border p-3" placeholder="Class ID" value={cameraForm.class_id} onChange={(e) => setCameraForm({ ...cameraForm, class_id: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="Display name" value={cameraForm.display_name} onChange={(e) => setCameraForm({ ...cameraForm, display_name: e.target.value })} />
-              <input className="rounded-2xl border p-3" placeholder="RTSP URL" value={cameraForm.rtsp_url} onChange={(e) => setCameraForm({ ...cameraForm, rtsp_url: e.target.value })} />
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={cameraForm.enabled} onChange={(e) => setCameraForm({ ...cameraForm, enabled: e.target.checked })} />
-                Enabled
-              </label>
-              {cameraStatus.message && (
-                <p className={`text-sm ${cameraStatus.type === "error" ? "text-red-600" : "text-emerald-700"}`}>
-                  {cameraStatus.message}
-                </p>
-              )}
-              <button className="rounded-2xl bg-mint px-4 py-3 font-medium text-white" type="submit">Save camera</button>
-            </form>
-
-            <form className="grid gap-3" onSubmit={saveSettings}>
-              <h3 className="text-lg font-semibold">Monitoring settings</h3>
-              <input
-                className="rounded-2xl border p-3"
-                type="number"
-                min="1"
-                value={settings.monitoring_interval_minutes}
-                onChange={(e) => setSettings({ ...settings, monitoring_interval_minutes: Number(e.target.value) })}
-              />
-              <input
-                className="rounded-2xl border p-3"
-                type="number"
-                min="1"
-                value={settings.absence_alert_threshold_minutes}
-                onChange={(e) => setSettings({ ...settings, absence_alert_threshold_minutes: Number(e.target.value) })}
-              />
-              {settingsStatus.message && (
-                <p className={`text-sm ${settingsStatus.type === "error" ? "text-red-600" : "text-emerald-700"}`}>
-                  {settingsStatus.message}
-                </p>
-              )}
-              <button className="rounded-2xl bg-signal px-4 py-3 font-medium text-white" type="submit">Update settings</button>
-            </form>
-          </div>
-        </SectionCard>
+        <TeacherDashboard
+          activeStudents={activeStudents}
+          alerts={alerts}
+          onAcknowledge={acknowledgeAlert}
+          onDismiss={dismissAlert}
+          loading={loading.attendance}
+        />
+        <AdminPanel
+          studentForm={studentForm}
+          setStudentForm={setStudentForm}
+          cameraForm={cameraForm}
+          setCameraForm={setCameraForm}
+          settings={settings}
+          setSettings={setSettings}
+          studentStatus={studentStatus}
+          cameraStatus={cameraStatus}
+          settingsStatus={settingsStatus}
+          onSubmitStudent={submitStudent}
+          onSubmitCamera={submitCamera}
+          onSaveSettings={saveSettings}
+          cameraStatuses={cameraStatuses}
+          loading={loading.admin}
+        />
       </div>
 
-      <SectionCard title="Attendance Log">
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-separate border-spacing-y-2">
-            <thead>
-              <tr className="text-left text-sm uppercase tracking-[0.18em] text-slate-500">
-                <th className="px-3 py-2">Student</th>
-                <th className="px-3 py-2">Date</th>
-                <th className="px-3 py-2">Check in</th>
-                <th className="px-3 py-2">Check out</th>
-                <th className="px-3 py-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attendanceSessions.map((session) => {
-                const primaryTimestamp = session.checked_in_at ?? session.checked_out_at;
-                const statusLabel = session.status === "checked_in" ? "Checked in" : "Checked out";
-                const statusClasses =
-                  session.status === "checked_in"
-                    ? "bg-emerald-100 text-emerald-800"
-                    : "bg-slate-200 text-slate-700";
-
-                return (
-                  <tr key={`${session.uid}-${session.checked_in_at ?? "none"}-${session.checked_out_at ?? "none"}`}>
-                    <td className="rounded-l-2xl bg-slate-50 px-3 py-3">
-                      <p className="font-semibold text-ink">{session.name}</p>
-                      <p className="text-sm text-slate-600">{session.uid}</p>
-                    </td>
-                    <td className="bg-slate-50 px-3 py-3 text-sm text-slate-700">{formatDate(primaryTimestamp)}</td>
-                    <td className="bg-slate-50 px-3 py-3 text-sm text-slate-700">{formatTime(session.checked_in_at)}</td>
-                    <td className="bg-slate-50 px-3 py-3 text-sm text-slate-700">{formatTime(session.checked_out_at)}</td>
-                    <td className="rounded-r-2xl bg-slate-50 px-3 py-3">
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${statusClasses}`}>
-                        {statusLabel}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {attendanceSessions.length === 0 && (
-            <p className="px-3 py-4 text-slate-500">No attendance records yet for this class.</p>
-          )}
-        </div>
-      </SectionCard>
+      <AttendanceLog attendanceSessions={attendanceSessions} loading={loading.attendance} />
 
       <section className="grid gap-6 lg:grid-cols-2">
-        <SectionCard title="Students">
-          <div className="space-y-3">
-            {students.map((student) => (
-              <div key={student.uid} className="rounded-2xl border border-slate-200 p-4">
-                <p className="font-semibold">{student.name}</p>
-                <p className="text-sm text-slate-600">{student.uid} - {student.class_id}</p>
-                <p className="text-sm text-slate-600">{student.embedding_count} embeddings</p>
-                <p className="text-sm text-slate-600">{student.photo_count} saved enrollment photos</p>
-                {student.photos?.length > 0 && (
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {student.photos.map((photo) => (
-                      <img
-                        key={photo.id}
-                        src={photo.url}
-                        alt={`${student.name} enrollment ${photo.original_filename}`}
-                        className="h-24 w-full rounded-xl object-cover"
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </SectionCard>
-
-        <SectionCard title="Cameras">
-          <div className="space-y-3">
-            {cameras.map((camera) => (
-              <div key={camera.class_id} className="rounded-2xl border border-slate-200 p-4">
-                <p className="font-semibold">{camera.display_name}</p>
-                <p className="text-sm text-slate-600">{camera.class_id}</p>
-                <p className="text-sm text-slate-600 break-all">{camera.rtsp_url}</p>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
+        <StudentsList students={students} />
+        <CamerasList cameras={cameras} />
       </section>
     </main>
   );

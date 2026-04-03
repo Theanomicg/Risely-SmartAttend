@@ -13,3 +13,4 @@ uvicorn.out.log
 uvicorn.err.log
 tmp_test_upload/
 server/storage/
+.tmp/

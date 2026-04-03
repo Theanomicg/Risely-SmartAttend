@@ -74,7 +74,18 @@ class CameraConfigIn(BaseModel):
 
 
 class CameraConfigOut(CameraConfigIn):
-    pass
+    rtsp_url: str = ""
+    rtsp_url_masked: str
+
+
+class CameraHealthResponse(BaseModel):
+    class_id: str
+    display_name: str
+    enabled: bool
+    status: str
+    last_checked_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_error: str | None = None
 
 
 class MonitoringSettingsIn(BaseModel):
@@ -105,3 +116,8 @@ class AlertAcknowledgeResponse(BaseModel):
 class AlertDismissResponse(BaseModel):
     id: UUID
     status: str
+
+
+class SystemStatusResponse(BaseModel):
+    api_status: str
+    auth_enabled: bool

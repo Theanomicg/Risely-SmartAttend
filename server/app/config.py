@@ -25,8 +25,12 @@ class Settings(BaseSettings):
     face_distance_threshold: float = Field(default=0.35, alias="FACE_DISTANCE_THRESHOLD")
     monitoring_interval_minutes: int = Field(default=5, alias="MONITORING_INTERVAL_MINUTES")
     absence_alert_threshold_minutes: int = Field(default=15, alias="ABSENCE_ALERT_THRESHOLD_MINUTES")
+    camera_sample_interval_seconds: int = Field(default=5, alias="CAMERA_SAMPLE_INTERVAL_SECONDS", ge=1, le=60)
+    camera_reconnect_max_delay_seconds: int = Field(default=30, alias="CAMERA_RECONNECT_MAX_DELAY_SECONDS", ge=1, le=300)
     min_registration_embeddings: int = Field(default=3, alias="MIN_REGISTRATION_EMBEDDINGS")
     enrollment_photo_dir: str = Field(default="storage/enrollment_photos", alias="ENROLLMENT_PHOTO_DIR")
+    teacher_token: str = Field(default="", alias="TEACHER_TOKEN")
+    admin_token: str = Field(default="", alias="ADMIN_TOKEN")
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -39,6 +43,10 @@ class Settings(BaseSettings):
     @property
     def enrollment_photo_path(self) -> Path:
         return Path(self.enrollment_photo_dir)
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.teacher_token or self.admin_token)
 
 
 @lru_cache

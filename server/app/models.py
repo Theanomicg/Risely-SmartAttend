@@ -67,6 +67,27 @@ class AttendanceEvent(Base):
     student: Mapped[Student] = relationship()
 
 
+class ActiveAttendanceSession(Base):
+    __tablename__ = "active_attendance_sessions"
+
+    uid: Mapped[str] = mapped_column(ForeignKey("students.uid", ondelete="CASCADE"), primary_key=True)
+    classroom_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    checked_in_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    student: Mapped[Student] = relationship()
+
+
 class CameraConfig(Base):
     __tablename__ = "camera_configs"
 
